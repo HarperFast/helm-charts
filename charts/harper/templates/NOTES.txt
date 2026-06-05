@@ -33,6 +33,6 @@ Harper has been deployed as release "{{ .Release.Name }}" in namespace "{{ .Rele
      -H 'Content-Type: application/json' -d '{"operation":"cluster_status"}'
 {{- end }}
 
-5. Run the bundled smoke test:
+{{ if eq (include "harper.replicationEnabled" .) "true" }}5{{ else }}4{{ end }}. Run the bundled smoke test:
 
    helm test {{ .Release.Name }} -n {{ .Release.Namespace }}
