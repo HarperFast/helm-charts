@@ -30,6 +30,10 @@ spec:
       annotations:
         # Roll pods when the rendered config/replication settings change.
         checksum/config: {{ printf "%s-%s-%v" (toJson .Values.config) (include "harper.replicationEnabled" .) .Values.replicaCount | sha256sum }}
+        {{- if $replEnabled }}
+        # Roll pods when the entry-wrapper script (ConfigMap) changes.
+        checksum/entry-script: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- end }}
         {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
