@@ -16,7 +16,7 @@ appVersion: "5.0.26"
 
 home: https://www.harperdb.io
 sources:
-  - https://github.com/HarperDB/helm-charts
+  - https://github.com/HarperFast/helm-charts
   - https://hub.docker.com/r/harperfast/harper-pro-openshift
   - https://catalog.redhat.com/en/software/containers/harperfast/harper-pro-openshift
   - https://docs.harperdb.io/reference/v5/configuration/options
@@ -41,6 +41,6 @@ annotations:
     - name: Documentation
       url: https://docs.harperdb.io
     - name: GitHub
-      url: https://github.com/HarperDB/helm-charts
+      url: https://github.com/HarperFast/helm-charts
     - name: Issues
-      url: https://github.com/HarperDB/helm-charts/issues
+      url: https://github.com/HarperFast/helm-charts/issues

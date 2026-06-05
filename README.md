@@ -14,7 +14,7 @@ replication mesh, and full passthrough of every
 [documentation](https://helm.sh/docs) to get started.
 
 ```bash
-helm repo add harper https://harperdb.github.io/helm-charts
+helm repo add harper https://harperfast.github.io/helm-charts
 helm repo update
 helm install harper harper/harper -n harper --create-namespace
 ```

@@ -14,7 +14,7 @@ This guide installs the Harper Helm chart on **k3s + Longhorn** and on
 - (Optional) cert-manager for TLS; Prometheus Operator for ServiceMonitor
 
 ```bash
-git clone https://github.com/HarperDB/helm-charts.git
+git clone https://github.com/HarperFast/helm-charts.git
 cd helm-charts
 ```
 
