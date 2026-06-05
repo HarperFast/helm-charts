@@ -1,0 +1,46 @@
+{{- if eq (include "harper.replicationEnabled" .) "true" }}
+{{- /*
+  Entry wrapper for multi-node clusters. Each pod advertises its own identity
+  (replication.hostname / url) but starts with EMPTY routes. The cluster is then
+  formed by the `add_node` operation (see scripts/harper-join-cluster.sh), which
+  is Harper's documented join flow and establishes peer trust for self-signed
+  certificates (verify_tls:false) — instead of relying on pre-shared certs +
+  static routes. See https://docs.harperdb.io/reference/v5/replication/clustering
+
+  We do NOT pre-write harper-config.yaml (that makes Harper Pro skip install and
+  strict-validate a partial file). Base config comes from HARPER_DEFAULT_CONFIG;
+  the per-pod replication identity is forced via HARPER_SET_CONFIG.
+*/ -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "harper.fullname" . }}-config
+  labels:
+    {{- include "harper.labels" . | nindent 4 }}
+data:
+  harper-entry.sh: |
+    #!/bin/sh
+    set -eu
+    ROOTPATH="${ROOTPATH:-{{ .Values.harper.rootPath }}}"
+
+    # Advertise this pod's own replication identity; leave routes empty so the
+    # mesh is formed explicitly via add_node (handles self-signed cert trust).
+    HARPER_SET_CONFIG="$(node -e '
+      const host = process.env.HOSTNAME;
+      const fqdn = host + "." + process.env.HEADLESS + "." + process.env.NS + ".svc." + process.env.DOMAIN;
+      const port = parseInt(process.env.SECPORT, 10);
+      const cfg = { replication: {
+        hostname: fqdn,
+        url: "wss://" + fqdn + ":" + port,
+        securePort: port,
+        databases: process.env.REPL_DBS || "*",
+        failOver: (process.env.REPL_FAILOVER === "true"),
+        routes: []
+      }};
+      process.stdout.write(JSON.stringify(cfg));
+    ')"
+    export HARPER_SET_CONFIG
+    echo "[harper-entry] HARPER_SET_CONFIG=$HARPER_SET_CONFIG"
+    echo "[harper-entry] exec: ${HARPER_CMD:-harperdb run}"
+    exec ${HARPER_CMD:-harperdb run}
+{{- end }}

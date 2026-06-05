@@ -1,0 +1,335 @@
+# =============================================================================
+# Harper Helm chart — default values
+# =============================================================================
+# Deploys a configurable number of Harper (Harper Pro) instances as a
+# StatefulSet, with automatic native-replication mesh wiring, per-pod
+# persistence, and full passthrough of every harper-config.yaml option.
+#
+# Docs: https://docs.harperdb.io/reference/v5/configuration/options
+# =============================================================================
+
+## Number of Harper instances (StatefulSet replicas).
+## 1 = single node (replication disabled automatically unless forced on).
+## >1 = a replicating mesh (see `replication` below).
+replicaCount: 3
+
+image:
+  # Certified, OpenShift-compatible Harper Pro image.
+  # Docker Hub:  harperfast/harper-pro-openshift
+  # Red Hat:     registry.connect.redhat.com/harperfast/harper-pro-openshift
+  repository: harperfast/harper-pro-openshift
+  # The Harper release to deploy. This is the single knob for "which Harper version".
+  tag: "5.0.26"
+  pullPolicy: IfNotPresent
+  # Optionally pin by digest instead of tag (takes precedence over tag if set):
+  # digest: "sha256:..."
+
+imagePullSecrets: []
+#  - name: redhat-connect-pull-secret
+
+nameOverride: ""
+fullnameOverride: ""
+
+## ---------------------------------------------------------------------------
+## Harper runtime basics
+## ---------------------------------------------------------------------------
+harper:
+  # Root directory for all Harper persistent data, config, logs, components.
+  # The persistent volume is mounted here, and the chart-managed
+  # harper-config.yaml is written here on every start (declarative config).
+  rootPath: /opt/harper/hdb
+
+  # Accept the Harper terms agreement (required for unattended boot).
+  termsAgreement: "yes"
+
+  # HOME for the Harper process. The image's user is `harperdb` with this home;
+  # its install/cache dirs live here and are group-0 writable, so the container
+  # (runAsGroup: 0) can write them. Set explicitly so a forced non-root UID
+  # doesn't get HOME=/ (unwritable).
+  home: /home/harperdb
+
+  # Start command Harper is launched with in the multi-node replication wrapper.
+  # (Single-node uses the image's native entrypoint and ignores this.)
+  command: "harperdb run"
+
+  # Configuration delivery:
+  #   The chart does NOT pre-write harper-config.yaml — doing so makes Harper Pro
+  #   treat the instance as already-installed (skipping install and strict-
+  #   validating a partial file). Instead `config` (below) is passed as JSON via
+  #   HARPER_DEFAULT_CONFIG so the image installs normally and layers your
+  #   settings on top. Replication is forced per-pod via HARPER_SET_CONFIG.
+  #   See https://docs.harperdb.io/reference/v5/configuration/overview
+
+  # Bootstrap super-user. Created on first boot. Stored in a Secret.
+  admin:
+    username: HDB_ADMIN
+    # If empty and existingSecret is unset, a random password is generated
+    # and stored in a chart-managed Secret on first install.
+    password: ""
+    # Use an existing secret instead (keys: username, password).
+    existingSecret: ""
+    usernameKey: username
+    passwordKey: password
+
+## ---------------------------------------------------------------------------
+## Native replication (Plexus, WebSocket-based — Harper v4.4+)
+## https://docs.harperdb.io/reference/v5/replication/overview
+## ---------------------------------------------------------------------------
+## When enabled with replicaCount > 1 the chart auto-generates per-pod
+## replication.hostname / url / routes so the pods form a full mesh using
+## their stable StatefulSet DNS names. Do NOT also set `config.replication`
+## when this is enabled — the chart owns that block.
+replication:
+  # "auto" => enabled only when replicaCount > 1. true/false to force.
+  enabled: auto
+  # Secure WebSocket replication port (default since v4.5.0).
+  securePort: 9933
+  # Databases to replicate. "*" = all.
+  databases: "*"
+  # Fail over to an alternate node if a peer is unreachable.
+  failOver: true
+
+  # Automatically form the mesh after install/upgrade via a Helm hook Job that
+  # calls add_node from harper-0 to every peer (verify_tls:false). This is the
+  # built-in equivalent of running scripts/harper-join-cluster.sh by hand.
+  # Set false if you prefer to join manually or manage trust with per-node certs.
+  autoJoin: true
+  join:
+    # Image used by the join Job (just needs curl + sh).
+    image: curlimages/curl:8.10.1
+    runAsUser: 100
+    backoffLimit: 6
+    activeDeadlineSeconds: 600
+
+## ---------------------------------------------------------------------------
+## Harper configuration passthrough
+## ---------------------------------------------------------------------------
+## EVERYTHING under `config` is serialized verbatim into harper-config.yaml.
+## This is the escape hatch that lets you set ANY option from
+## https://docs.harperdb.io/reference/v5/configuration/options — including
+## options this chart does not model explicitly or that ship in future
+## Harper releases. The chart merges, in increasing precedence:
+##   1. chart defaults (below)
+##   2. your `config:` values
+##   3. chart-managed blocks (rootPath, replication mesh) applied at runtime
+config:
+  http:
+    port: 9926
+    securePort: 4443
+    cors: true
+  operationsApi:
+    network:
+      port: 9925
+  threads:
+    # Default = CPU count - 1. Set explicitly for predictable sizing.
+    count: 7
+  logging:
+    level: info
+    stdStreams: true   # send logs to stdout/stderr for `kubectl logs`
+  storage:
+    engine: rocksdb
+    caching: true
+    compression: true
+  analytics:
+    aggregatePeriod: 60
+  authentication:
+    operationTokenTimeout: 1d
+    refreshTokenTimeout: 30d
+  # Example of options you can add freely:
+  # mqtt:
+  #   network:
+  #     port: 1883
+  #     securePort: 8883
+  #   webSocket: true
+  # storage:
+  #   writeAsync: false
+
+## ---------------------------------------------------------------------------
+## Persistence (Longhorn by default)
+## ---------------------------------------------------------------------------
+persistence:
+  enabled: true
+  # Longhorn provides replicated block storage with snapshots/backups.
+  # NOTE: Harper already replicates at the app layer when replicaCount>1,
+  # so a Longhorn replica count of 1-2 avoids redundant write amplification.
+  # Set the desired Longhorn replica count on the StorageClass itself.
+  storageClassName: longhorn
+  accessModes:
+    - ReadWriteOnce
+  size: 20Gi
+  # Existing PVC is not supported with StatefulSet volumeClaimTemplates;
+  # the chart always uses volumeClaimTemplates.
+
+## ---------------------------------------------------------------------------
+## Networking
+## ---------------------------------------------------------------------------
+service:
+  # Client-facing service (load-balances across all pods).
+  type: ClusterIP
+  # Ports exposed on the client service.
+  ports:
+    operationsApi: 9925
+    http: 9926
+    httpsecure: 4443
+  annotations: {}
+
+# Headless service is always created (required for StatefulSet stable DNS).
+headlessService:
+  annotations: {}
+
+# Kubernetes Ingress (use on k3s with Traefik). Disabled by default.
+ingress:
+  enabled: false
+  className: ""        # e.g. "traefik" on k3s
+  annotations: {}
+  hosts:
+    - host: harper.local
+      paths:
+        - path: /
+          pathType: Prefix
+          port: 9926
+  tls: []
+
+# OpenShift Route (created only when openShift.enabled=true).
+route:
+  enabled: false
+  host: ""             # empty lets OpenShift assign one
+  port: 9926
+  tls:
+    enabled: true
+    termination: edge  # edge | passthrough | reencrypt
+  annotations: {}
+
+## ---------------------------------------------------------------------------
+## TLS (cert-manager integration, optional)
+## ---------------------------------------------------------------------------
+tls:
+  enabled: false
+  # If true, the chart creates a cert-manager Certificate and mounts it.
+  certManager:
+    enabled: false
+    issuerRef:
+      name: ""
+      kind: ClusterIssuer   # or Issuer
+      group: cert-manager.io
+    duration: 2160h
+    renewBefore: 360h
+  # Alternatively reference an existing TLS secret (keys: tls.crt, tls.key, ca.crt).
+  existingSecret: ""
+  # Where certs are mounted inside the container.
+  mountPath: /opt/harper/tls
+
+## ---------------------------------------------------------------------------
+## OpenShift
+## ---------------------------------------------------------------------------
+openShift:
+  # When true: create Route (if route.enabled), and omit runAsUser so the
+  # OpenShift SCC assigns an arbitrary UID (the certified image is unprivileged).
+  enabled: false
+
+## ---------------------------------------------------------------------------
+## Pod scheduling & resources
+## ---------------------------------------------------------------------------
+resources:
+  requests:
+    cpu: "1"
+    memory: 2Gi
+  limits:
+    cpu: "4"
+    memory: 8Gi
+
+# Spread replicas across nodes for HA (recommended for a real mesh).
+podAntiAffinity:
+  enabled: true
+  type: soft   # soft = preferred, hard = required
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+topologySpreadConstraints: []
+
+podAnnotations: {}
+podLabels: {}
+
+## Security context.
+## The harper-pro-openshift image is OpenShift-style: it runs as a non-root user
+## whose HOME / install dirs (/home/harperdb) are owned by the ROOT GROUP (gid 0)
+## and are group-writable, so it tolerates an arbitrary UID. Two requirements:
+##   * runAsGroup: 0  -> the process can write its group-0-owned home/install dirs
+##   * fsGroup: <non-zero>  -> the kubelet makes the DATA PVC group-writable and
+##     adds that gid as a supplemental group. It MUST be non-zero: with fsGroup 0
+##     and fsGroupChangePolicy OnRootMismatch the kubelet skips making a root:root
+##     volume group-writable, causing EACCES on the data dir.
+## fsGroupChangePolicy is "Always" to guarantee the volume is made writable even
+## when its ownership happens to already match (defensive; fine for these volumes).
+## On OpenShift (openShift.enabled=true) these are dropped so the SCC assigns them.
+podSecurityContext:
+  fsGroup: 10000
+  fsGroupChangePolicy: Always
+
+containerSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 10000
+  runAsGroup: 0
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+  seccompProfile:
+    type: RuntimeDefault
+
+## Probes (TCP by default — avoids auth on the Operations API).
+startupProbe:
+  enabled: true
+  tcpPort: 9925
+  failureThreshold: 30
+  periodSeconds: 10
+livenessProbe:
+  enabled: true
+  tcpPort: 9925
+  initialDelaySeconds: 20
+  periodSeconds: 15
+  failureThreshold: 6
+readinessProbe:
+  enabled: true
+  tcpPort: 9925
+  initialDelaySeconds: 10
+  periodSeconds: 10
+  failureThreshold: 6
+
+# StatefulSet rolling-update / management.
+updateStrategy: RollingUpdate   # RollingUpdate | OnDelete
+podManagementPolicy: OrderedReady   # OrderedReady | Parallel
+terminationGracePeriodSeconds: 60
+
+# PodDisruptionBudget
+pdb:
+  enabled: true
+  minAvailable: 1
+  # maxUnavailable: 1   # set one or the other
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+## ---------------------------------------------------------------------------
+## Prometheus ServiceMonitor (optional; requires Prometheus Operator)
+## ---------------------------------------------------------------------------
+serviceMonitor:
+  enabled: false
+  # Harper analytics are exposed via the Operations API; verify the metrics
+  # endpoint/path for your version before enabling.
+  port: operations-api
+  path: /
+  interval: 30s
+  labels: {}
+
+# Extra environment variables for the Harper container.
+extraEnv: []
+#  - name: SOME_FLAG
+#    value: "true"
+
+# Extra volumes / mounts (e.g., to inject component code).
+extraVolumes: []
+extraVolumeMounts: []

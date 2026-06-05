@@ -1,0 +1,103 @@
+{{- if and (eq (include "harper.replicationEnabled" .) "true") .Values.replication.autoJoin }}
+{{- /*
+  Post-install/upgrade hook that forms the replication mesh automatically by
+  calling `add_node` from harper-0 to every other pod (verify_tls:false, so trust
+  is established between the self-signed nodes — Harper's documented join flow).
+  This replaces running scripts/harper-join-cluster.sh by hand. Re-runs on every
+  `helm upgrade`, so scaling up re-forms the mesh with the new peers.
+*/ -}}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "harper.fullname" . }}-join
+  labels:
+    {{- include "harper.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "5"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  backoffLimit: {{ .Values.replication.join.backoffLimit | default 6 }}
+  activeDeadlineSeconds: {{ .Values.replication.join.activeDeadlineSeconds | default 600 }}
+  template:
+    metadata:
+      labels:
+        {{- include "harper.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: replication-join
+    spec:
+      restartPolicy: Never
+      serviceAccountName: {{ include "harper.serviceAccountName" . }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if not .Values.openShift.enabled }}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: {{ .Values.replication.join.runAsUser | default 100 }}
+        seccompProfile:
+          type: RuntimeDefault
+      {{- end }}
+      containers:
+        - name: join
+          image: {{ .Values.replication.join.image | default "curlimages/curl:8.10.1" }}
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+          env:
+            - name: HUSER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "harper.adminSecretName" . }}
+                  key: {{ .Values.harper.admin.usernameKey | default "username" }}
+            - name: HPASS
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "harper.adminSecretName" . }}
+                  key: {{ .Values.harper.admin.passwordKey | default "password" }}
+            - name: REL
+              value: {{ include "harper.fullname" . | quote }}
+            - name: HEADLESS
+              value: {{ include "harper.headlessServiceName" . | quote }}
+            - name: NS
+              value: {{ .Release.Namespace | quote }}
+            - name: DOMAIN
+              value: {{ include "harper.clusterDomain" . | quote }}
+            - name: REPLICAS
+              value: {{ .Values.replicaCount | quote }}
+            - name: OPS_PORT
+              value: {{ .Values.config.operationsApi.network.port | default 9925 | quote }}
+          command: ["/bin/sh", "-c"]
+          args:
+            - |
+              set -eu
+              OPS="http://${REL}-0.${HEADLESS}.${NS}.svc.${DOMAIN}:${OPS_PORT}"
+
+              echo "[join] waiting for ${REL}-0 Operations API at $OPS ..."
+              i=0
+              until curl -sf -o /dev/null -u "$HUSER:$HPASS" -X POST "$OPS" \
+                    -H 'Content-Type: application/json' -d '{"operation":"describe_all"}'; do
+                i=$((i + 1))
+                [ "$i" -ge 60 ] && { echo "[join] timed out waiting for ${REL}-0"; exit 1; }
+                sleep 5
+              done
+              echo "[join] ${REL}-0 is up; forming mesh"
+
+              n=1
+              while [ "$n" -lt "$REPLICAS" ]; do
+                HOST="${REL}-${n}.${HEADLESS}.${NS}.svc.${DOMAIN}"
+                echo "[join] add_node $HOST"
+                curl -s -u "$HUSER:$HPASS" -X POST "$OPS" -H 'Content-Type: application/json' \
+                  -d "{\"operation\":\"add_node\",\"hostname\":\"${HOST}\",\"verify_tls\":false,\"authorization\":{\"username\":\"${HUSER}\",\"password\":\"${HPASS}\"}}" || true
+                echo
+                n=$((n + 1))
+              done
+
+              echo "[join] cluster_status:"
+              curl -s -u "$HUSER:$HPASS" -X POST "$OPS" -H 'Content-Type: application/json' \
+                -d '{"operation":"cluster_status"}' || true
+              echo
+              echo "[join] done"
+{{- end }}

@@ -1,0 +1,38 @@
+Harper has been deployed as release "{{ .Release.Name }}" in namespace "{{ .Release.Namespace }}".
+
+  Instances (replicas):  {{ .Values.replicaCount }}
+  Image:                 {{ include "harper.image" . }}
+  Replication mesh:      {{ include "harper.replicationEnabled" . }}
+  Storage class:         {{ .Values.persistence.storageClassName | default "(default)" }} ({{ .Values.persistence.size }}/pod)
+
+1. Watch the pods come up:
+
+   kubectl -n {{ .Release.Namespace }} rollout status statefulset/{{ include "harper.fullname" . }}
+
+2. Admin credentials:
+{{- if .Values.harper.admin.existingSecret }}
+   From your existing secret: {{ .Values.harper.admin.existingSecret }}
+{{- else }}
+   USER=$(kubectl -n {{ .Release.Namespace }} get secret {{ include "harper.adminSecretName" . }} -o jsonpath='{.data.username}' | base64 -d)
+   PASS=$(kubectl -n {{ .Release.Namespace }} get secret {{ include "harper.adminSecretName" . }} -o jsonpath='{.data.password}' | base64 -d)
+   echo "user=$USER pass=$PASS"
+{{- end }}
+
+3. Port-forward and hit the Operations API:
+
+   kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "harper.fullname" . }} {{ .Values.service.ports.operationsApi }}:{{ .Values.service.ports.operationsApi }}
+   curl -u "$USER:$PASS" -X POST http://localhost:{{ .Values.service.ports.operationsApi }} \
+     -H 'Content-Type: application/json' -d '{"operation":"describe_all"}'
+
+{{- if eq (include "harper.replicationEnabled" .) "true" }}
+
+4. Verify the replication mesh: write on one node, read on another.
+
+   # Inspect the cluster status:
+   curl -u "$USER:$PASS" -X POST http://localhost:{{ .Values.service.ports.operationsApi }} \
+     -H 'Content-Type: application/json' -d '{"operation":"cluster_status"}'
+{{- end }}
+
+5. Run the bundled smoke test:
+
+   helm test {{ .Release.Name }} -n {{ .Release.Namespace }}

@@ -1,0 +1,28 @@
+{{- if and .Values.openShift.enabled .Values.route.enabled }}
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: {{ include "harper.fullname" . }}
+  labels:
+    {{- include "harper.labels" . | nindent 4 }}
+  {{- with .Values.route.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if .Values.route.host }}
+  host: {{ .Values.route.host }}
+  {{- end }}
+  to:
+    kind: Service
+    name: {{ include "harper.fullname" . }}
+    weight: 100
+  port:
+    targetPort: {{ ternary "http" "https" (eq (int .Values.route.port) (int (.Values.config.http.port | default 9926))) }}
+  {{- if .Values.route.tls.enabled }}
+  tls:
+    termination: {{ .Values.route.tls.termination }}
+    insecureEdgeTerminationPolicy: Redirect
+  {{- end }}
+  wildcardPolicy: None
+{{- end }}
