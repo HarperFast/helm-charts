@@ -27,7 +27,7 @@ spec:
       targetPort: replication
     {{- end }}
 ---
-{{- /* Client-facing service: load-balances across all pods. */ -}}
+{{/* Client-facing service: load-balances across all pods. */}}
 apiVersion: v1
 kind: Service
 metadata:
