@@ -14,8 +14,8 @@ over WebSocket**, asynchronous, eventually consistent, with **no primary/replica
 election**. Nodes are peers; a node joins by listing peer `routes` in its
 config.
 
-Because membership is static for a given `size`, we generate each pod's
-`replication` block at boot from its ordinal:
+Because membership is static for a given replica count, the chart generates
+each pod's `replication` block at boot from its ordinal:
 
 ```
 replication:
@@ -40,7 +40,7 @@ Config from `config:` (verbatim passthrough of every option in the
 [v5 reference](https://docs.harperdb.io/reference/v5/configuration/options)) is
 serialized to JSON and passed to the container as **`HARPER_DEFAULT_CONFIG`**.
 The image installs itself on first boot (creating a complete valid config, the
-data directories, and the admin user) and layers our settings on top; on restart
+data directories, and the admin user) and layers the chart's settings on top; on restart
 Harper re-applies them. Pods carry a `checksum/config` annotation, so changing config
 triggers a rolling restart automatically.
 
@@ -70,8 +70,8 @@ replicates blocks across nodes, which adds network latency. Two tunings matter:
 
 - `dataLocality: best-effort` keeps a replica on the pod's node.
 - `numberOfReplicas: 1–2` — Harper already replicates at the application layer
-  when `size > 1`, so 3× Longhorn replicas under 3× Harper nodes is redundant
-  write amplification.
+  when `replicaCount > 1`, so 3× Longhorn replicas under 3× Harper nodes is
+  redundant write amplification.
 
 Longhorn snapshots + backup-to-S3 can also serve as the backup mechanism;
 decide whether Longhorn or Harper's native snapshot/restore is the source of

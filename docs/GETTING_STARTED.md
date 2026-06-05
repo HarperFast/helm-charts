@@ -7,7 +7,8 @@ This guide installs the Harper Helm chart on **k3s + Longhorn** and on
 
 - `kubectl` configured against your cluster
 - `helm` v3.8+
-- A storage class (Longhorn on k3s; any RWO class on OpenShift)
+- A storage class (Longhorn recommended for production k3s; `local-path` works
+  for local dev; any RWO class on OpenShift)
 - For the certified image, a pull secret if pulling from
   `registry.connect.redhat.com`
 - (Optional) cert-manager for TLS; Prometheus Operator for ServiceMonitor

@@ -52,7 +52,8 @@ curl -s -u "$USER:$PASS" -X POST $OPS -H 'Content-Type: application/json' -d '{
   "operation":"sql","sql":"SELECT * FROM verify.t"}' | jq
 ```
 
-The record should still be present (data is on the Longhorn PVC).
+The record should still be present (data survives on the PVC regardless of
+storage class).
 
 ## 4. Replication mesh (the key multi-node check)
 

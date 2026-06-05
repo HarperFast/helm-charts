@@ -116,9 +116,8 @@ new peers. To join by hand instead, set `replication.autoJoin=false` and run
 > trust each other ("certificate signature failure"). `add_node` with
 > `verify_tls:false` is Harper's documented way to establish trust between fresh
 > self-signed nodes. For production, issue **per-node** certs from one CA (e.g.
-> cert-manager) so trust is automatic; confirm the exact setup with Harper
-> engineering. (`scripts/gen-replication-certs.sh` is retained for that per-CA
-> direction but is not used by the default flow.)
+> cert-manager) so trust is automatic. (`scripts/gen-replication-certs.sh` is
+> retained for that per-CA direction but is not used by the default flow.)
 
 ## Assumptions to validate against your image
 

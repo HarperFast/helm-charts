@@ -119,15 +119,15 @@ kubectl -n harper logs job/harper-join          # shows add_node + cluster_statu
 You want `connected: true` sockets. (You can also re-run it by hand any time with
 `./scripts/harper-join-cluster.sh 3`, or disable the auto Job with
 `--set replication.autoJoin=false`.) Then run the replication checks in
-[TESTING.md §4](TESTING.md) (write on `harper-0`, read on `harper-1`).
+[TESTING.md §4](TESTING.md#4-replication-mesh-the-key-multi-node-check) (write on `harper-0`, read on `harper-1`).
 
 > Why a join step? Replication is mutual-TLS and Harper gives each node its own
 > per-node cert from an internal store. Pre-sharing one cert breaks node
 > identity ("Should not connect to self"); per-node self-signed certs don't
 > trust each other ("certificate signature failure"). `add_node` is Harper's
 > built-in way to establish that trust. For production, issue per-node certs
-> from one CA (e.g. cert-manager) so trust is automatic — confirm the exact
-> setup with Harper engineering.
+> from one CA (e.g. cert-manager) so trust is automatic — see the
+> [cert-manager docs](https://cert-manager.io/docs/) for Certificate/Issuer setup.
 
 ---
 
@@ -177,8 +177,8 @@ The certified image is amd64-only. Options, fastest to most reliable:
    chart itself on any architecture.
 3. **Use an amd64 host for functional tests (recommended).** A small amd64 cloud
    VM (or a CI runner) running k3s/k3d gives you a clean, fast environment that
-   matches the certified image's architecture. This is the path I'd use for the
-   replication/upgrade/scaling tests that need Harper actually running.
+   matches the certified image's architecture. This is the recommended path for
+   the replication/upgrade/scaling tests that need Harper actually running.
 
 If/when a multi-arch (arm64) Harper image is available, none of this applies —
 just set `image.repository`/`image.tag` accordingly.

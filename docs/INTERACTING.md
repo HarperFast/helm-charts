@@ -173,13 +173,13 @@ hop 0 '{"operation":"remove_node","hostname":"harper-3.harper-headless.harper.sv
 ```bash
 # create a role, then a user with that role
 hop svc '{"operation":"add_role","role":"app_readwrite","permission":{"super_user":false}}'
-hop svc '{"operation":"add_user","role":"app_readwrite","username":"seer_app","password":"S3cret!","active":true}'
+hop svc '{"operation":"add_user","role":"app_readwrite","username":"app_user","password":"S3cret!","active":true}'
 hop svc '{"operation":"list_users"}'
 hop svc '{"operation":"list_roles"}'
 
 # verify the new user can authenticate (against the service)
 kubectl -n $NS port-forward svc/harper 9925:9925 >/dev/null 2>&1 &
-curl -s -u "seer_app:S3cret!" -X POST http://localhost:9925 \
+curl -s -u "app_user:S3cret!" -X POST http://localhost:9925 \
   -H 'Content-Type: application/json' -d '{"operation":"describe_all"}' | jq
 ```
 
