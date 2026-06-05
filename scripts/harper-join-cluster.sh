@@ -28,12 +28,17 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 U="$(kubectl -n "$NS" get secret "${REL}-admin" -o jsonpath='{.data.username}' | base64 -d)"
 P="$(kubectl -n "$NS" get secret "${REL}-admin" -o jsonpath='{.data.password}' | base64 -d)"
 
+# Escape JSON string metacharacters so arbitrary credentials cannot break the payload.
+json_escape() { printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'; }
+EU="$(json_escape "$U")"
+EP="$(json_escape "$P")"
+
 echo ">> Forming mesh from ${REL}-0 across ${REPLICAS} nodes..."
 i=1
 while [ "$i" -lt "$REPLICAS" ]; do
   HOST="${REL}-${i}.${HEADLESS}.${NS}.svc.${DOMAIN}"
   echo ">> add_node ${HOST}"
-  "${HERE}/harper-op.sh" 0 "{\"operation\":\"add_node\",\"hostname\":\"${HOST}\",\"verify_tls\":false,\"authorization\":{\"username\":\"${U}\",\"password\":\"${P}\"}}"
+  "${HERE}/harper-op.sh" 0 "{\"operation\":\"add_node\",\"hostname\":\"${HOST}\",\"verify_tls\":false,\"authorization\":{\"username\":\"${EU}\",\"password\":\"${EP}\"}}"
   i=$((i + 1))
 done
 

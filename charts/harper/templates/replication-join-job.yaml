@@ -85,12 +85,19 @@ spec:
               done
               echo "[join] ${REL}-0 is up; forming mesh"
 
+              # Escape JSON string metacharacters so arbitrary credentials
+              # cannot break the payload (printf, not echo: BusyBox echo may
+              # interpret backslashes).
+              json_escape() { printf '%s' "$1" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g'; }
+              EUSER=$(json_escape "$HUSER")
+              EPASS=$(json_escape "$HPASS")
+
               n=1
               while [ "$n" -lt "$REPLICAS" ]; do
                 HOST="${REL}-${n}.${HEADLESS}.${NS}.svc.${DOMAIN}"
                 echo "[join] add_node $HOST"
                 curl -s -u "$HUSER:$HPASS" -X POST "$OPS" -H 'Content-Type: application/json' \
-                  -d "{\"operation\":\"add_node\",\"hostname\":\"${HOST}\",\"verify_tls\":false,\"authorization\":{\"username\":\"${HUSER}\",\"password\":\"${HPASS}\"}}" || true
+                  -d "{\"operation\":\"add_node\",\"hostname\":\"${HOST}\",\"verify_tls\":false,\"authorization\":{\"username\":\"${EUSER}\",\"password\":\"${EPASS}\"}}" || true
                 echo
                 n=$((n + 1))
               done
