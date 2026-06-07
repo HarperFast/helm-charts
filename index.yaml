@@ -1,5 +1,45 @@
 apiVersion: v1
 entries:
+  harper:
+  - annotations:
+      artifacthub.io/category: database
+      artifacthub.io/license: Apache-2.0
+      artifacthub.io/links: |
+        - name: Documentation
+          url: https://docs.harperdb.io
+        - name: GitHub
+          url: https://github.com/HarperFast/helm-charts
+        - name: Issues
+          url: https://github.com/HarperFast/helm-charts/issues
+    apiVersion: v2
+    appVersion: 5.0.26
+    created: "2026-06-07T16:28:33.371629686Z"
+    description: 'Deploy a configurable Harper (Harper Pro) cluster on Kubernetes
+      / OpenShift. Runs N Harper instances as a StatefulSet with stable network identity,
+      per-pod persistent storage, and an automatically wired native (Plexus) replication
+      mesh. Every harper-config.yaml option is configurable. '
+    digest: c70d722e1a4ee99ba96b459491516d0501ee598400136861b40b9f641bc59890
+    home: https://www.harperdb.io
+    keywords:
+    - harper
+    - harperdb
+    - database
+    - nosql
+    - cache
+    - openshift
+    maintainers:
+    - email: support@harperdb.io
+      name: Harper Support
+    name: harper
+    sources:
+    - https://github.com/HarperFast/helm-charts
+    - https://hub.docker.com/r/harperfast/harper-pro-openshift
+    - https://catalog.redhat.com/en/software/containers/harperfast/harper-pro-openshift
+    - https://docs.harperdb.io/reference/v5/configuration/options
+    type: application
+    urls:
+    - https://github.com/HarperFast/helm-charts/releases/download/harper-0.1.0/harper-0.1.0.tgz
+    version: 0.1.0
   harperdb:
   - annotations:
       artifacthub.io/category: database
@@ -73,4 +113,4 @@ entries:
     urls:
     - https://github.com/HarperDB/helm/releases/download/harperdb-0.2.0/harperdb-0.2.0.tgz
     version: 0.2.0
-generated: "2023-08-11T19:40:02.284512851Z"
+generated: "2026-06-07T16:28:33.371638342Z"
