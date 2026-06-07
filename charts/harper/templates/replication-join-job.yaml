@@ -95,16 +95,48 @@ spec:
               n=1
               while [ "$n" -lt "$REPLICAS" ]; do
                 HOST="${REL}-${n}.${HEADLESS}.${NS}.svc.${DOMAIN}"
+                PURL="http://${HOST}:${OPS_PORT}"
+
+                # Wait for THIS peer's API to be up before add_node — otherwise the
+                # cross-generated cert exchange has nothing to connect to and fails
+                # silently. (This was the cause of an empty cluster_status.)
+                echo "[join] waiting for peer $HOST ..."
+                pi=0
+                until curl -sf -o /dev/null -u "$HUSER:$HPASS" -X POST "$PURL" \
+                      -H 'Content-Type: application/json' -d '{"operation":"describe_all"}'; do
+                  pi=$((pi + 1))
+                  [ "$pi" -ge 60 ] && { echo "[join] WARN: peer $HOST not ready after 300s; will still attempt"; break; }
+                  sleep 5
+                done
+
                 echo "[join] add_node $HOST"
-                curl -s -u "$HUSER:$HPASS" -X POST "$OPS" -H 'Content-Type: application/json' \
-                  -d "{\"operation\":\"add_node\",\"hostname\":\"${HOST}\",\"verify_tls\":false,\"authorization\":{\"username\":\"${EUSER}\",\"password\":\"${EPASS}\"}}" || true
-                echo
+                ai=0
+                while [ "$ai" -lt 6 ]; do
+                  RESP="$(curl -s -u "$HUSER:$HPASS" -X POST "$OPS" -H 'Content-Type: application/json' \
+                    -d "{\"operation\":\"add_node\",\"hostname\":\"${HOST}\",\"verify_tls\":false,\"authorization\":{\"username\":\"${EUSER}\",\"password\":\"${EPASS}\"}}" || true)"
+                  echo "  -> $RESP"
+                  # success when Harper acknowledges the add (or it's already added)
+                  case "$RESP" in
+                    *uccessfully*|*already*) break ;;
+                  esac
+                  ai=$((ai + 1)); sleep 10
+                done
                 n=$((n + 1))
               done
 
-              echo "[join] cluster_status:"
-              curl -s -u "$HUSER:$HPASS" -X POST "$OPS" -H 'Content-Type: application/json' \
-                -d '{"operation":"cluster_status"}' || true
-              echo
+              # Best-effort: poll until the mesh reports the expected peers connected.
+              WANT=$((REPLICAS - 1))
+              echo "[join] waiting for >= ${WANT} connected peers ..."
+              s=0
+              while [ "$s" -lt 24 ]; do
+                ST="$(curl -s -u "$HUSER:$HPASS" -X POST "$OPS" -H 'Content-Type: application/json' \
+                  -d '{"operation":"cluster_status"}' || true)"
+                C="$(printf '%s' "$ST" | grep -o '"connected":true' | wc -l | tr -d ' ')"
+                echo "  connected sockets: ${C}/${WANT}"
+                [ "${C:-0}" -ge "$WANT" ] && break
+                s=$((s + 1)); sleep 5
+              done
+              echo "[join] final cluster_status:"
+              printf '%s\n' "$ST"
               echo "[join] done"
 {{- end }}
