@@ -197,8 +197,25 @@ route:
   port: 9926
   tls:
     enabled: true
-    termination: edge  # edge | passthrough | reencrypt
+    # edge       = TLS at the router, plaintext to the pod (targets http 9926)
+    # reencrypt  = TLS at the router, re-encrypted to the pod (needs Harper HTTPS
+    #              via config.http.securePort + a cert; targets https)
+    # passthrough= TLS terminated by Harper itself (targets https)
+    termination: edge
+    # For reencrypt: PEM of the CA that signed Harper's serving cert, so the
+    # router trusts the backend. Paste the CA cert here (multi-line).
+    destinationCACertificate: ""
   annotations: {}
+  # Optional second Route exposing the admin/Operations API (9925).
+  # Off by default — admin is normally reached via `oc port-forward`. Only enable
+  # on a trusted/secured ingress.
+  operationsApi:
+    enabled: false
+    host: ""
+    tls:
+      enabled: true
+      termination: edge
+    annotations: {}
 
 ## ---------------------------------------------------------------------------
 ## TLS (cert-manager integration, optional)
@@ -218,6 +235,16 @@ tls:
   existingSecret: ""
   # Where certs are mounted inside the container.
   mountPath: /opt/harper/tls
+  # Keys within the secret. Harper is pointed at these files (loaded into its
+  # certificate table and used for HTTPS + replication).
+  certKey: tls.crt
+  keyKey: tls.key
+  # CA file key. Set to a private-CA file (e.g. "ca.crt") so nodes trust each
+  # other; leave "" for a public CA and set enableRootCAs=true instead.
+  caCert: ca.crt
+  # For publicly-signed certs: validate peers against the Mozilla root CA store
+  # instead of a provided CA file.
+  enableRootCAs: false
 
 ## ---------------------------------------------------------------------------
 ## OpenShift
@@ -226,6 +253,22 @@ openShift:
   # When true: create Route (if route.enabled), and omit runAsUser so the
   # OpenShift SCC assigns an arbitrary UID (the certified image is unprivileged).
   enabled: false
+
+## ---------------------------------------------------------------------------
+## NetworkPolicy (optional; for default-deny clusters, common on OpenShift)
+## ---------------------------------------------------------------------------
+networkPolicy:
+  # Off by default. Enable on clusters that default-deny pod traffic so the
+  # replication mesh (9933) and in-namespace clients (9925/9926) can connect.
+  enabled: false
+  # Allow ingress from these additional namespaces (by metadata.name label).
+  allowedNamespaces: []
+  # Allow ingress from anywhere (0.0.0.0/0) on the Harper ports. Use with care.
+  allowExternal: false
+  # Extra ingress port rules (raw NetworkPolicyPort list) appended to ingress.
+  extraIngressPorts: []
+  # Extra egress rules (raw NetworkPolicyEgressRule list).
+  extraEgress: []
 
 ## ---------------------------------------------------------------------------
 ## Pod scheduling & resources

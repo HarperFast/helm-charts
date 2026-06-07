@@ -126,6 +126,23 @@ spec:
                 secretKeyRef:
                   name: {{ include "harper.adminSecretName" . }}
                   key: {{ .Values.harper.admin.passwordKey | default "password" }}
+            {{- if .Values.tls.enabled }}
+            # Point Harper at the operator-provided certs. Harper loads these
+            # into its certificate table and uses them for HTTPS + replication,
+            # so peers trust a shared CA instead of each node's self-signed one.
+            - name: TLS_CERTIFICATE
+              value: {{ printf "%s/%s" .Values.tls.mountPath (.Values.tls.certKey | default "tls.crt") | quote }}
+            - name: TLS_PRIVATEKEY
+              value: {{ printf "%s/%s" .Values.tls.mountPath (.Values.tls.keyKey | default "tls.key") | quote }}
+            {{- if .Values.tls.caCert }}
+            - name: TLS_CERTIFICATEAUTHORITY
+              value: {{ printf "%s/%s" .Values.tls.mountPath .Values.tls.caCert | quote }}
+            {{- end }}
+            {{- if .Values.tls.enableRootCAs }}
+            - name: REPLICATION_ENABLEROOTCAS
+              value: "true"
+            {{- end }}
+            {{- end }}
             {{- if $replEnabled }}
             - name: HARPER_CMD
               value: {{ .Values.harper.command | quote }}

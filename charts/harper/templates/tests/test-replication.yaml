@@ -1,0 +1,79 @@
+{{- if eq (include "harper.replicationEnabled" .) "true" }}
+{{- /*
+  Helm test (multi-node only): verifies the replication mesh is actually working.
+  1. polls cluster_status on harper-0 until >= replicaCount-1 peers are connected
+  2. writes a record on harper-0 and confirms it replicates to harper-1
+  Run with:  helm test <release> -n <ns> --logs
+*/ -}}
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "harper.fullname" . }}-test-replication
+  labels:
+    {{- include "harper.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-weight": "10"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  containers:
+    - name: test
+      image: {{ .Values.replication.join.image | default "curlimages/curl:8.10.1" }}
+      command: ["/bin/sh", "-c"]
+      env:
+        - name: HUSER
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "harper.adminSecretName" . }}
+              key: {{ .Values.harper.admin.usernameKey | default "username" }}
+        - name: HPASS
+          valueFrom:
+            secretKeyRef:
+              name: {{ include "harper.adminSecretName" . }}
+              key: {{ .Values.harper.admin.passwordKey | default "password" }}
+      args:
+        - |
+          set -eu
+          REL="{{ include "harper.fullname" . }}"
+          HEADLESS="{{ include "harper.headlessServiceName" . }}"
+          NS="{{ .Release.Namespace }}"
+          DOMAIN="{{ include "harper.clusterDomain" . }}"
+          PORT="{{ .Values.config.operationsApi.network.port | default 9925 }}"
+          WANT={{ sub (int .Values.replicaCount) 1 }}
+          N0="http://${REL}-0.${HEADLESS}.${NS}.svc.${DOMAIN}:${PORT}"
+          N1="http://${REL}-1.${HEADLESS}.${NS}.svc.${DOMAIN}:${PORT}"
+          api() { curl -s -u "$HUSER:$HPASS" -X POST "$1" -H 'Content-Type: application/json' -d "$2"; }
+
+          echo "== 1. cluster_status: expect >= ${WANT} connected peers on harper-0 =="
+          i=0; CONN=0
+          while [ "$i" -lt 30 ]; do
+            ST="$(api "$N0" '{"operation":"cluster_status"}')"
+            CONN="$(printf '%s' "$ST" | grep -o '"connected":true' | wc -l | tr -d ' ')"
+            echo "  connected sockets: ${CONN}/${WANT}"
+            [ "${CONN:-0}" -ge "$WANT" ] && break
+            i=$((i+1)); sleep 5
+          done
+          [ "${CONN:-0}" -ge "$WANT" ] || { echo "FAIL: mesh not connected"; printf '%s\n' "$ST"; exit 1; }
+          echo "  PASS: mesh connected"
+
+          echo "== 2. write on harper-0, read on harper-1 =="
+          VAL="helmtest-$(date +%s)"
+          api "$N0" '{"operation":"create_database","database":"helmtest"}' >/dev/null 2>&1 || true
+          api "$N0" '{"operation":"create_table","database":"helmtest","table":"t","primary_key":"id"}' >/dev/null 2>&1 || true
+          # give replicated DDL a moment to reach harper-1
+          sleep 3
+          api "$N0" "{\"operation\":\"insert\",\"database\":\"helmtest\",\"table\":\"t\",\"records\":[{\"id\":1,\"v\":\"${VAL}\"}]}" >/dev/null
+
+          j=0; FOUND=no
+          while [ "$j" -lt 12 ]; do
+            R="$(api "$N1" '{"operation":"sql","sql":"SELECT v FROM helmtest.t WHERE id=1"}')"
+            if printf '%s' "$R" | grep -q "$VAL"; then FOUND=yes; break; fi
+            j=$((j+1)); sleep 5
+          done
+          if [ "$FOUND" = yes ]; then
+            echo "  PASS: '${VAL}' written on harper-0 was read from harper-1"
+            exit 0
+          fi
+          echo "FAIL: record did not replicate to harper-1"; printf '%s\n' "$R"; exit 1
+{{- end }}

@@ -89,45 +89,94 @@ A JSON response means the chart, config seeding, and admin bootstrap all work.
 
 ---
 
-## 4. Scale to a replicating mesh
+## 4. Deploy a 3-node replicated cluster
 
-Scale up, wait for all pods to be ready, then **join them into a mesh**. Each
-pod boots advertising its own replication identity but with no peers; the join
-script connects them using Harper's documented `add_node` flow (with
-`verify_tls:false`, which establishes trust between the self-signed nodes — the
-supported approach for fresh self-signed installs).
+For a multi-node cluster, do a **clean install** (a fresh data volume). This
+matters: Harper persists node + certificate state, so leftover state from an
+earlier single-node or mis-joined run will block the mesh. Start clean:
 
 ```bash
-helm upgrade harper ./charts/harper -n harper \
+# if a release already exists, wipe it AND its data volumes first
+helm uninstall harper -n harper 2>/dev/null || true
+kubectl -n harper delete pvc -l app.kubernetes.io/instance=harper 2>/dev/null || true
+
+helm install harper ./charts/harper -n harper --create-namespace \
   --set replicaCount=3 \
   --set persistence.storageClassName=local-path \
   --set persistence.size=5Gi
 
-kubectl -n harper rollout status sts/harper --timeout=300s
-kubectl -n harper get pods -o wide        # should spread across agent nodes
+kubectl -n harper rollout status sts/harper --timeout=600s
+kubectl -n harper get pods -o wide        # harper-0/1/2, spread across agent nodes
 ```
 
-The chart forms the mesh **automatically**: a post-install/upgrade hook Job
-(`replication.autoJoin`, on by default) runs `add_node` from `harper-0` to every
-peer once the pods are up. Watch it and confirm:
+Each pod boots with its own unique identity (`node.hostname` = its pod FQDN) and
+empty routes. The chart then forms the mesh **automatically**: a
+post-install/upgrade hook Job (`replication.autoJoin`, on by default) runs
+`add_node` from `harper-0` to the peers. This is Harper's documented
+**cross-generated certificate** flow — `add_node` with `verify_tls:false` makes
+the nodes generate and sign certs for each other and store them for all future
+connections, and gossip discovery propagates membership to the rest of the
+cluster. No manual certificate handling is required.
 
 ```bash
-kubectl -n harper logs job/harper-join          # shows add_node + cluster_status
-./scripts/harper-op.sh 0 '{"operation":"cluster_status"}'
+kubectl -n harper logs job/harper-join          # add_node calls + cluster_status
 ```
 
-You want `connected: true` sockets. (You can also re-run it by hand any time with
-`./scripts/harper-join-cluster.sh 3`, or disable the auto Job with
-`--set replication.autoJoin=false`.) Then run the replication checks in
-[TESTING.md §4](TESTING.md#4-replication-mesh-the-key-multi-node-check) (write on `harper-0`, read on `harper-1`).
+Confirm every node has a unique name and is connected:
 
-> Why a join step? Replication is mutual-TLS and Harper gives each node its own
-> per-node cert from an internal store. Pre-sharing one cert breaks node
-> identity ("Should not connect to self"); per-node self-signed certs don't
-> trust each other ("certificate signature failure"). `add_node` is Harper's
-> built-in way to establish that trust. For production, issue per-node certs
-> from one CA (e.g. cert-manager) so trust is automatic — see the
-> [cert-manager docs](https://cert-manager.io/docs/) for Certificate/Issuer setup.
+```bash
+for i in 0 1 2; do echo "harper-$i:"; ./scripts/harper-op.sh $i '{"operation":"cluster_status"}' \
+  | jq '{node_name, conns:(.connections|length), connected:[.connections[]?.database_sockets[]?.connected]}'; done
+```
+
+You want `node_name` = `harper-N.harper-headless...` (not `localhost`) and
+`connected: [true, ...]`. If the Job ran before all pods were Ready, re-run the
+join once (gossip needs the targets up to sign CSRs):
+
+```bash
+./scripts/harper-join-cluster.sh 3
+```
+
+> **Notes from the Harper replication docs:**
+> - Identity comes from `node.hostname`; trust comes from the cross-generated
+>   certs that `add_node` exchanges. Don't hand-place certs into `keys/` — it
+>   fights that flow.
+> - For production, supply per-node certs from one CA via `tls.certificate` /
+>   `tls.certificateAuthority` / `tls.privateKey` (Harper loads them into its
+>   certificate table), or use cert-manager.
+> - **Users and roles are NOT replicated.** The chart sets the same admin on
+>   every pod, but app users created via the API must be created on each node.
+
+---
+
+## 4b. Verify replication works (write here, read there)
+
+The real proof: write on one node, read it back from another.
+
+```bash
+# 1. create a database + table (replicated DDL like create_table propagates)
+./scripts/harper-op.sh 0 '{"operation":"create_database","database":"dev"}'
+./scripts/harper-op.sh 0 '{"operation":"create_table","database":"dev","table":"dog","primary_key":"id"}'
+
+# 2. WRITE on harper-0
+./scripts/harper-op.sh 0 '{"operation":"insert","database":"dev","table":"dog","records":[{"id":1,"name":"penny"}]}'
+
+# 3. READ the same record from harper-1 and harper-2 (give async replication a moment)
+sleep 3
+./scripts/harper-op.sh 1 '{"operation":"sql","sql":"SELECT * FROM dev.dog WHERE id=1"}'
+./scripts/harper-op.sh 2 '{"operation":"sql","sql":"SELECT * FROM dev.dog WHERE id=1"}'
+```
+
+Both reads should return `penny`. Try it the other way too (write on `harper-2`,
+read on `harper-0`) — replication is bidirectional. To watch it live, tail a
+receiving node while you insert on another:
+
+```bash
+kubectl -n harper logs -f harper-1 | grep -i replication
+```
+
+> Note: `create_table` (and inserts/updates/deletes) replicate, but **destructive
+> schema ops** (`drop_table`, `drop_database`) do **not** — run those on each node.
 
 ---
 

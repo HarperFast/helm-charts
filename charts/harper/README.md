@@ -119,6 +119,56 @@ new peers. To join by hand instead, set `replication.autoJoin=false` and run
 > cert-manager) so trust is automatic. (`scripts/gen-replication-certs.sh` is
 > retained for that per-CA direction but is not used by the default flow.)
 
+## Admin credentials
+
+By default the chart creates an admin user `HDB_ADMIN` with a **random** password
+stored in the `<release>-admin` Secret (preserved across upgrades). You can set
+your own three ways:
+
+```bash
+# 1. set username + password inline (password is stored in the Helm release secret)
+helm install harper ./charts/harper -n harper \
+  --set harper.admin.username=myadmin --set harper.admin.password='S3cret!'
+
+# 2. (recommended) reference your own Secret with keys: username, password
+kubectl -n harper create secret generic my-harper-admin \
+  --from-literal=username=myadmin --from-literal=password='S3cret!'
+helm install harper ./charts/harper -n harper \
+  --set harper.admin.existingSecret=my-harper-admin
+```
+
+Override the secret key names with `harper.admin.usernameKey` /
+`harper.admin.passwordKey` if your secret uses different keys.
+
+## Bringing your own certificates
+
+By default Harper uses self-signed certs and (for multi-node) cross-generates the
+replication trust via `add_node`. To supply your own certs — a corporate/public
+CA, or one CA for the whole cluster — put them in a Secret and enable TLS:
+
+```bash
+# Secret with keys: tls.crt, tls.key, and (for a private CA) ca.crt
+helm install harper ./charts/harper -n harper \
+  --set replicaCount=3 \
+  --set tls.enabled=true --set tls.existingSecret=my-harper-tls
+```
+
+The chart points Harper at the mounted files (`TLS_CERTIFICATE`,
+`TLS_PRIVATEKEY`, `TLS_CERTIFICATEAUTHORITY`), which Harper loads into its
+certificate table and uses for HTTPS **and** replication. Notes:
+
+- **Private/self-signed CA:** include `ca.crt` in the secret (default
+  `tls.caCert: ca.crt`) so nodes trust each other.
+- **Public CA:** set `tls.caCert=""` and `tls.enableRootCAs=true` to validate
+  against the Mozilla root store instead.
+- **Multi-node:** the cert must be valid for each pod's DNS name. Easiest is one
+  cert whose SANs cover every pod (`scripts/gen-replication-certs.sh <replicas>`
+  generates a CA + such a cert as secret `<release>-tls`); stricter setups issue
+  a per-node cert (CN = pod FQDN) from a shared CA via cert-manager
+  (`tls.certManager`).
+- Node *identity* always comes from `node.hostname` (set per-pod by the chart),
+  independent of the cert.
+
 ## Assumptions to validate against your image
 
 - The image's start command is `harperdb run` (override with `harper.command`).
