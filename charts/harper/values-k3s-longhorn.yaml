@@ -1,0 +1,47 @@
+# Overlay for k3s + Longhorn clusters.
+#   helm install harper ./charts/harper -f charts/harper/values-k3s-longhorn.yaml
+
+replicaCount: 3
+
+image:
+  repository: harperfast/harper-pro-openshift
+  tag: "5.0.26"
+
+persistence:
+  enabled: true
+  storageClassName: longhorn
+  size: 20Gi
+  accessModes:
+    - ReadWriteOnce
+
+# k3s ships Traefik as the default ingress controller.
+ingress:
+  enabled: true
+  className: traefik
+  hosts:
+    - host: harper.local
+      paths:
+        - path: /
+          pathType: Prefix
+          port: 9926
+
+# Spread the 3 instances across nodes.
+podAntiAffinity:
+  enabled: true
+  type: soft
+
+# Right-size for edge/lightweight nodes.
+resources:
+  requests:
+    cpu: "500m"
+    memory: 1Gi
+  limits:
+    cpu: "2"
+    memory: 4Gi
+
+# NOTE on Longhorn + Harper performance:
+#   * Set the Longhorn StorageClass `numberOfReplicas` to 1-2: Harper already
+#     replicates at the application layer, so 3x Longhorn replicas under 3x
+#     Harper nodes is redundant write amplification.
+#   * Enable Longhorn dataLocality=best-effort so a replica is co-located with
+#     the pod (Harper's read performance depends on local file access).

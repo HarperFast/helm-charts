@@ -1,0 +1,77 @@
+{{- if .Values.openShift.enabled }}
+{{- /*
+  OpenShift Routes.
+  - Main Route (route.enabled): exposes the component/REST server. For edge
+    termination it targets the plaintext HTTP port; for reencrypt/passthrough it
+    targets Harper's HTTPS port (requires config.http.securePort + a cert).
+  - Operations API Route (route.operationsApi.enabled): optionally exposes the
+    admin/Operations API (9925). Off by default — admin is normally reached via
+    `oc port-forward`. Expose it only on a trusted/secured ingress.
+*/ -}}
+{{- $httpPort := (.Values.config.http.port | default 9926) -}}
+{{- if .Values.route.enabled }}
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: {{ include "harper.fullname" . }}
+  labels:
+    {{- include "harper.labels" . | nindent 4 }}
+  {{- with .Values.route.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if .Values.route.host }}
+  host: {{ .Values.route.host }}
+  {{- end }}
+  to:
+    kind: Service
+    name: {{ include "harper.fullname" . }}
+    weight: 100
+  port:
+    {{- if and .Values.route.tls.enabled (ne .Values.route.tls.termination "edge") }}
+    targetPort: https
+    {{- else }}
+    targetPort: http
+    {{- end }}
+  {{- if .Values.route.tls.enabled }}
+  tls:
+    termination: {{ .Values.route.tls.termination }}
+    insecureEdgeTerminationPolicy: Redirect
+    {{- if and (eq .Values.route.tls.termination "reencrypt") .Values.route.tls.destinationCACertificate }}
+    destinationCACertificate: |
+      {{- .Values.route.tls.destinationCACertificate | nindent 6 }}
+    {{- end }}
+  {{- end }}
+  wildcardPolicy: None
+{{- end }}
+{{- if .Values.route.operationsApi.enabled }}
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: {{ include "harper.fullname" . }}-ops
+  labels:
+    {{- include "harper.labels" . | nindent 4 }}
+  {{- with .Values.route.operationsApi.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  {{- if .Values.route.operationsApi.host }}
+  host: {{ .Values.route.operationsApi.host }}
+  {{- end }}
+  to:
+    kind: Service
+    name: {{ include "harper.fullname" . }}
+    weight: 100
+  port:
+    targetPort: operations-api
+  {{- if .Values.route.operationsApi.tls.enabled }}
+  tls:
+    termination: {{ .Values.route.operationsApi.tls.termination }}
+    insecureEdgeTerminationPolicy: Redirect
+  {{- end }}
+  wildcardPolicy: None
+{{- end }}
+{{- end }}

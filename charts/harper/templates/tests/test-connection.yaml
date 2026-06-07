@@ -1,0 +1,30 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "harper.fullname" . }}-test-connection
+  labels:
+    {{- include "harper.labels" . | nindent 4 }}
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  containers:
+    - name: test
+      image: curlimages/curl:8.10.1
+      command: ["/bin/sh", "-c"]
+      args:
+        - |
+          set -e
+          URL="http://{{ include "harper.fullname" . }}:{{ .Values.service.ports.operationsApi }}"
+          echo "Checking Harper Operations API at $URL ..."
+          # describe_all is a lightweight authenticated op; a 401 still proves the
+          # API is up and routing. We accept 200 or 401 as "reachable".
+          CODE=$(curl -s -o /dev/null -w "%{http_code}" -X POST "$URL" \
+            -H "Content-Type: application/json" \
+            -d '{"operation":"describe_all"}' || true)
+          echo "HTTP status: $CODE"
+          case "$CODE" in
+            200|401) echo "Harper is reachable."; exit 0 ;;
+            *) echo "Unexpected status $CODE"; exit 1 ;;
+          esac

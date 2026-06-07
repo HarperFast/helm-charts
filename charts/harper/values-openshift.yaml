@@ -1,0 +1,33 @@
+# Overlay for Red Hat OpenShift.
+#   helm install harper ./charts/harper -f charts/harper/values-openshift.yaml
+#
+# The certified image (harperfast/harper-pro-openshift) is unprivileged and
+# runs under an arbitrary UID assigned by the OpenShift restricted-v2 SCC.
+# Setting openShift.enabled=true drops runAsUser/runAsGroup/fsGroup so the SCC
+# assigns them, and enables the OpenShift Route.
+
+openShift:
+  enabled: true
+
+replicaCount: 3
+
+image:
+  # Pull from the Red Hat certified registry (requires a pull secret):
+  #   repository: registry.connect.redhat.com/harperfast/harper-pro-openshift
+  repository: harperfast/harper-pro-openshift
+  tag: "5.0.26"
+
+# imagePullSecrets:
+#   - name: redhat-connect-pull-secret
+
+route:
+  enabled: true
+  tls:
+    enabled: true
+    termination: edge
+
+persistence:
+  enabled: true
+  # Use whatever ReadWriteOnce StorageClass your cluster provides.
+  storageClassName: ""   # "" => cluster default
+  size: 20Gi

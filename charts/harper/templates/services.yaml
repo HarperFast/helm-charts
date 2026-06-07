@@ -1,0 +1,56 @@
+{{- /* Headless service: required for stable per-pod DNS used by replication. */ -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "harper.headlessServiceName" . }}
+  labels:
+    {{- include "harper.labels" . | nindent 4 }}
+  {{- with .Values.headlessService.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  clusterIP: None
+  publishNotReadyAddresses: true
+  selector:
+    {{- include "harper.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: operations-api
+      port: {{ .Values.config.operationsApi.network.port | default 9925 }}
+      targetPort: operations-api
+    - name: http
+      port: {{ .Values.config.http.port | default 9926 }}
+      targetPort: http
+    {{- if eq (include "harper.replicationEnabled" .) "true" }}
+    - name: replication
+      port: {{ .Values.replication.securePort }}
+      targetPort: replication
+    {{- end }}
+---
+{{/* Client-facing service: load-balances across all pods. */}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "harper.fullname" . }}
+  labels:
+    {{- include "harper.labels" . | nindent 4 }}
+  {{- with .Values.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.service.type }}
+  selector:
+    {{- include "harper.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: operations-api
+      port: {{ .Values.service.ports.operationsApi }}
+      targetPort: operations-api
+    - name: http
+      port: {{ .Values.service.ports.http }}
+      targetPort: http
+    {{- if .Values.tls.enabled }}
+    - name: https
+      port: {{ .Values.service.ports.httpsecure }}
+      targetPort: https
+    {{- end }}

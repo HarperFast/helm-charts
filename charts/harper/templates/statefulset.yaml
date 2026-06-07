@@ -1,0 +1,263 @@
+{{- $opPort := (.Values.config.operationsApi.network.port | default 9925) -}}
+{{- $httpPort := (.Values.config.http.port | default 9926) -}}
+{{- $replEnabled := (eq (include "harper.replicationEnabled" .) "true") -}}
+{{- $tlsSecret := "" -}}
+{{- if .Values.tls.enabled -}}
+{{-   if .Values.tls.existingSecret -}}{{- $tlsSecret = .Values.tls.existingSecret -}}{{- else -}}{{- $tlsSecret = printf "%s-tls" (include "harper.fullname" .) -}}{{- end -}}
+{{- end -}}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "harper.fullname" . }}
+  labels:
+    {{- include "harper.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ include "harper.headlessServiceName" . }}
+  replicas: {{ .Values.replicaCount }}
+  podManagementPolicy: {{ .Values.podManagementPolicy }}
+  updateStrategy:
+    type: {{ .Values.updateStrategy }}
+  selector:
+    matchLabels:
+      {{- include "harper.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "harper.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      annotations:
+        # Roll pods when the rendered config/replication settings change.
+        checksum/config: {{ printf "%s-%s-%v" (toJson .Values.config) (include "harper.replicationEnabled" .) .Values.replicaCount | sha256sum }}
+        {{- if $replEnabled }}
+        # Roll pods when the entry-wrapper script (ConfigMap) changes.
+        checksum/entry-script: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        {{- end }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "harper.serviceAccountName" . }}
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if not .Values.openShift.enabled }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- else }}
+      securityContext:
+        fsGroupChangePolicy: {{ .Values.podSecurityContext.fsGroupChangePolicy | default "OnRootMismatch" }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- if .Values.affinity }}
+      affinity:
+        {{- toYaml .Values.affinity | nindent 8 }}
+      {{- else if .Values.podAntiAffinity.enabled }}
+      affinity:
+        podAntiAffinity:
+          {{- if eq .Values.podAntiAffinity.type "hard" }}
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  {{- include "harper.selectorLabels" . | nindent 18 }}
+              topologyKey: kubernetes.io/hostname
+          {{- else }}
+          preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                labelSelector:
+                  matchLabels:
+                    {{- include "harper.selectorLabels" . | nindent 20 }}
+                topologyKey: kubernetes.io/hostname
+          {{- end }}
+      {{- end }}
+      {{- with .Values.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: harper
+          image: {{ include "harper.image" . }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- if $replEnabled }}
+          # Multi-node: wrapper computes per-pod replication, then execs Harper.
+          command: ["/bin/sh", "/harper-scripts/harper-entry.sh"]
+          {{- end }}
+          {{- if not .Values.openShift.enabled }}
+          securityContext:
+            {{- toYaml .Values.containerSecurityContext | nindent 12 }}
+          {{- else }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+          {{- end }}
+          env:
+            - name: ROOTPATH
+              value: {{ .Values.harper.rootPath | quote }}
+            - name: TC_AGREEMENT
+              value: {{ .Values.harper.termsAgreement | quote }}
+            - name: HOME
+              value: {{ .Values.harper.home | quote }}
+            # Base configuration (every harper-config.yaml option), applied at
+            # install and respected on restart. JSON mirrors the YAML structure.
+            - name: HARPER_DEFAULT_CONFIG
+              value: {{ toJson .Values.config | quote }}
+            - name: HDB_ADMIN_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "harper.adminSecretName" . }}
+                  key: {{ .Values.harper.admin.usernameKey | default "username" }}
+            - name: HDB_ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "harper.adminSecretName" . }}
+                  key: {{ .Values.harper.admin.passwordKey | default "password" }}
+            {{- if .Values.tls.enabled }}
+            # Point Harper at the operator-provided certs. Harper loads these
+            # into its certificate table and uses them for HTTPS + replication,
+            # so peers trust a shared CA instead of each node's self-signed one.
+            - name: TLS_CERTIFICATE
+              value: {{ printf "%s/%s" .Values.tls.mountPath (.Values.tls.certKey | default "tls.crt") | quote }}
+            - name: TLS_PRIVATEKEY
+              value: {{ printf "%s/%s" .Values.tls.mountPath (.Values.tls.keyKey | default "tls.key") | quote }}
+            {{- if .Values.tls.caCert }}
+            - name: TLS_CERTIFICATEAUTHORITY
+              value: {{ printf "%s/%s" .Values.tls.mountPath .Values.tls.caCert | quote }}
+            {{- end }}
+            {{- if .Values.tls.enableRootCAs }}
+            - name: REPLICATION_ENABLEROOTCAS
+              value: "true"
+            {{- end }}
+            {{- end }}
+            {{- if $replEnabled }}
+            - name: HARPER_CMD
+              value: {{ .Values.harper.command | quote }}
+            - name: HEADLESS
+              value: {{ include "harper.headlessServiceName" . | quote }}
+            - name: NS
+              value: {{ .Release.Namespace | quote }}
+            - name: DOMAIN
+              value: {{ include "harper.clusterDomain" . | quote }}
+            - name: STS
+              value: {{ include "harper.fullname" . | quote }}
+            - name: REPLICAS
+              value: {{ .Values.replicaCount | quote }}
+            - name: SECPORT
+              value: {{ .Values.replication.securePort | quote }}
+            - name: REPL_DBS
+              value: {{ .Values.replication.databases | quote }}
+            - name: REPL_FAILOVER
+              value: {{ .Values.replication.failOver | quote }}
+            {{- end }}
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          ports:
+            - name: operations-api
+              containerPort: {{ $opPort }}
+            - name: http
+              containerPort: {{ $httpPort }}
+            {{- if .Values.tls.enabled }}
+            - name: https
+              containerPort: {{ .Values.config.http.securePort | default 4443 }}
+            {{- end }}
+            {{- if $replEnabled }}
+            - name: replication
+              containerPort: {{ .Values.replication.securePort }}
+            {{- end }}
+            {{- if .Values.config.mqtt }}
+            - name: mqtt
+              containerPort: {{ .Values.config.mqtt.network.port | default 1883 }}
+            {{- end }}
+          {{- if .Values.startupProbe.enabled }}
+          startupProbe:
+            tcpSocket:
+              port: {{ .Values.startupProbe.tcpPort }}
+            periodSeconds: {{ .Values.startupProbe.periodSeconds }}
+            failureThreshold: {{ .Values.startupProbe.failureThreshold }}
+          {{- end }}
+          {{- if .Values.livenessProbe.enabled }}
+          livenessProbe:
+            tcpSocket:
+              port: {{ .Values.livenessProbe.tcpPort }}
+            initialDelaySeconds: {{ .Values.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.livenessProbe.periodSeconds }}
+            failureThreshold: {{ .Values.livenessProbe.failureThreshold }}
+          {{- end }}
+          {{- if .Values.readinessProbe.enabled }}
+          readinessProbe:
+            tcpSocket:
+              port: {{ .Values.readinessProbe.tcpPort }}
+            initialDelaySeconds: {{ .Values.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.readinessProbe.periodSeconds }}
+            failureThreshold: {{ .Values.readinessProbe.failureThreshold }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: data
+              mountPath: {{ .Values.harper.rootPath }}
+            {{- if $replEnabled }}
+            - name: scripts
+              mountPath: /harper-scripts
+            {{- end }}
+            {{- if .Values.tls.enabled }}
+            - name: tls
+              mountPath: {{ .Values.tls.mountPath }}
+              readOnly: true
+            {{- end }}
+            {{- with .Values.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+      volumes:
+        {{- if $replEnabled }}
+        - name: scripts
+          configMap:
+            name: {{ include "harper.fullname" . }}-config
+            defaultMode: 0755
+            items:
+              - key: harper-entry.sh
+                path: harper-entry.sh
+        {{- end }}
+        {{- if .Values.tls.enabled }}
+        - name: tls
+          secret:
+            secretName: {{ $tlsSecret }}
+        {{- end }}
+        {{- if not .Values.persistence.enabled }}
+        - name: data
+          emptyDir: {}
+        {{- end }}
+        {{- with .Values.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+  {{- if .Values.persistence.enabled }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+        labels:
+          {{- include "harper.labels" . | nindent 10 }}
+      spec:
+        accessModes:
+          {{- toYaml .Values.persistence.accessModes | nindent 10 }}
+        {{- if .Values.persistence.storageClassName }}
+        storageClassName: {{ .Values.persistence.storageClassName | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.persistence.size | quote }}
+  {{- end }}

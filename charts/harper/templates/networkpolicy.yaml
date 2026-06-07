@@ -1,0 +1,85 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- /*
+  Optional NetworkPolicy for default-deny clusters (common on OpenShift).
+  Allows:
+    * pod-to-pod replication + in-namespace client traffic to the Harper ports
+    * DNS egress (so pods can resolve the headless service for peers)
+    * intra-namespace egress (so nodes can reach each other on 9933)
+  Cross-namespace clients need an additional rule — add namespaces to
+  networkPolicy.allowedNamespaces or set networkPolicy.allowExternal=true.
+*/ -}}
+{{- $opPort := (.Values.config.operationsApi.network.port | default 9925) -}}
+{{- $httpPort := (.Values.config.http.port | default 9926) -}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "harper.fullname" . }}
+  labels:
+    {{- include "harper.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "harper.selectorLabels" . | nindent 6 }}
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        # other Harper pods (replication) + anything in this namespace
+        - podSelector: {}
+        {{- range .Values.networkPolicy.allowedNamespaces }}
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ . | quote }}
+        {{- end }}
+        {{- if .Values.networkPolicy.allowExternal }}
+        - ipBlock:
+            cidr: 0.0.0.0/0
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: {{ $opPort }}
+        - protocol: TCP
+          port: {{ $httpPort }}
+        {{- if eq (include "harper.replicationEnabled" .) "true" }}
+        - protocol: TCP
+          port: {{ .Values.replication.securePort }}
+        {{- end }}
+        {{- if .Values.tls.enabled }}
+        - protocol: TCP
+          port: {{ .Values.config.http.securePort | default 4443 }}
+        {{- end }}
+        {{- if .Values.config.mqtt }}
+        - protocol: TCP
+          port: {{ .Values.config.mqtt.network.port | default 1883 }}
+        {{- end }}
+        {{- with .Values.networkPolicy.extraIngressPorts }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+  egress:
+    # DNS resolution
+    - to:
+        - namespaceSelector: {}
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # pod-to-pod (replication) within this namespace
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "harper.selectorLabels" . | nindent 14 }}
+      ports:
+        {{- if eq (include "harper.replicationEnabled" .) "true" }}
+        - protocol: TCP
+          port: {{ .Values.replication.securePort }}
+        {{- end }}
+        - protocol: TCP
+          port: {{ $opPort }}
+        - protocol: TCP
+          port: {{ $httpPort }}
+    {{- with .Values.networkPolicy.extraEgress }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+{{- end }}

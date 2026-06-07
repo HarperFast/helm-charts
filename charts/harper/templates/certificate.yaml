@@ -1,0 +1,31 @@
+{{- if and .Values.tls.enabled .Values.tls.certManager.enabled }}
+{{- /*
+  cert-manager Certificate covering the client service and every stable pod DNS
+  name (so the cert is valid for replication mTLS between peers).
+*/ -}}
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: {{ include "harper.fullname" . }}-tls
+  labels:
+    {{- include "harper.labels" . | nindent 4 }}
+spec:
+  secretName: {{ include "harper.fullname" . }}-tls
+  duration: {{ .Values.tls.certManager.duration }}
+  renewBefore: {{ .Values.tls.certManager.renewBefore }}
+  issuerRef:
+    name: {{ .Values.tls.certManager.issuerRef.name }}
+    kind: {{ .Values.tls.certManager.issuerRef.kind }}
+    group: {{ .Values.tls.certManager.issuerRef.group }}
+  dnsNames:
+    - {{ include "harper.fullname" . }}
+    - {{ include "harper.fullname" . }}.{{ .Release.Namespace }}.svc
+    - {{ include "harper.fullname" . }}.{{ .Release.Namespace }}.svc.{{ include "harper.clusterDomain" . }}
+    {{- $fullname := include "harper.fullname" . -}}
+    {{- $headless := include "harper.headlessServiceName" . -}}
+    {{- $ns := .Release.Namespace -}}
+    {{- $domain := include "harper.clusterDomain" . -}}
+    {{- range $i := until (int .Values.replicaCount) }}
+    - {{ $fullname }}-{{ $i }}.{{ $headless }}.{{ $ns }}.svc.{{ $domain }}
+    {{- end }}
+{{- end }}
