@@ -5,7 +5,7 @@
 # StatefulSet, with automatic native-replication mesh wiring, per-pod
 # persistence, and full passthrough of every harper-config.yaml option.
 #
-# Docs: https://docs.harperdb.io/reference/v5/configuration/options
+# Docs: https://docs.harper.fast/reference/v5/configuration/options
 # =============================================================================
 
 ## Number of Harper instances (StatefulSet replicas).
@@ -58,7 +58,7 @@ harper:
   #   validating a partial file). Instead `config` (below) is passed as JSON via
   #   HARPER_DEFAULT_CONFIG so the image installs normally and layers your
   #   settings on top. Replication is forced per-pod via HARPER_SET_CONFIG.
-  #   See https://docs.harperdb.io/reference/v5/configuration/overview
+  #   See https://docs.harper.fast/reference/v5/configuration/overview
 
   # Bootstrap super-user. Created on first boot. Stored in a Secret.
   admin:
@@ -73,7 +73,7 @@ harper:
 
 ## ---------------------------------------------------------------------------
 ## Native replication (Plexus, WebSocket-based — Harper v4.4+)
-## https://docs.harperdb.io/reference/v5/replication/overview
+## https://docs.harper.fast/reference/v5/replication/overview
 ## ---------------------------------------------------------------------------
 ## When enabled with replicaCount > 1 the chart auto-generates per-pod
 ## replication.hostname / url / routes so the pods form a full mesh using
@@ -106,7 +106,7 @@ replication:
 ## ---------------------------------------------------------------------------
 ## EVERYTHING under `config` is serialized verbatim into harper-config.yaml.
 ## This is the escape hatch that lets you set ANY option from
-## https://docs.harperdb.io/reference/v5/configuration/options — including
+## https://docs.harper.fast/reference/v5/configuration/options — including
 ## options this chart does not model explicitly or that ship in future
 ## Harper releases. The chart merges, in increasing precedence:
 ##   1. chart defaults (below)

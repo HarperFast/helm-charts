@@ -19,7 +19,7 @@ sources:
   - https://github.com/HarperFast/helm-charts
   - https://hub.docker.com/r/harperfast/harper-pro-openshift
   - https://catalog.redhat.com/en/software/containers/harperfast/harper-pro-openshift
-  - https://docs.harperdb.io/reference/v5/configuration/options
+  - https://docs.harper.fast/reference/v5/configuration/options
 
 keywords:
   - harper
@@ -39,7 +39,7 @@ annotations:
   artifacthub.io/license: Apache-2.0
   artifacthub.io/links: |
     - name: Documentation
-      url: https://docs.harperdb.io
+      url: https://docs.harper.fast
     - name: GitHub
       url: https://github.com/HarperFast/helm-charts
     - name: Issues

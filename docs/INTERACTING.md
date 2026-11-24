@@ -73,7 +73,7 @@ hop() { ./scripts/harper-op.sh "$1" "$2" | jq; }   # hop <ordinal|svc> '<json>'
 ## 3. Core database operations (Operations API)
 
 All of these are `POST` bodies to port 9925. Create a database and table, then
-read/write. (Full reference: https://docs.harperdb.io/reference/v5/operations-api/operations)
+read/write. (Full reference: https://docs.harper.fast/reference/v5/operations-api/operations)
 
 ### Create a database and table
 ```bash
@@ -155,7 +155,7 @@ done
 
 ### Live cluster membership (normally the chart wires this for you)
 The chart forms the mesh automatically, but you can inspect/modify it live
-(super-user only). See https://docs.harperdb.io/reference/v5/replication/clustering
+(super-user only). See https://docs.harper.fast/reference/v5/replication/clustering
 
 ```bash
 # add a route to another node (PATCH/upsert)

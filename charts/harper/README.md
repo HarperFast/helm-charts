@@ -5,7 +5,7 @@ or OpenShift as a `StatefulSet`, with:
 
 - **Configurable replica count** (`replicaCount`) and **Harper release** (`image.tag`).
 - **Full passthrough of every `harper-config.yaml` option** via `config:` —
-  see the [v5 configuration reference](https://docs.harperdb.io/reference/v5/configuration/options).
+  see the [v5 configuration reference](https://docs.harper.fast/reference/v5/configuration/options).
 - **Automatic native-replication mesh** (Plexus / WebSocket) wiring across pods
   using their stable StatefulSet DNS names.
 - **Per-pod persistence** via `volumeClaimTemplates` (Longhorn by default).
