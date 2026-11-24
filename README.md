@@ -6,7 +6,7 @@ Kubernetes and OpenShift.
 The `harper` chart runs N Harper instances as a `StatefulSet` with stable
 network identity, per-pod persistent storage, an automatically wired native
 replication mesh, and full passthrough of every
-[`harper-config.yaml` option](https://docs.harperdb.io/reference/v5/configuration/options).
+[`harper-config.yaml` option](https://docs.harper.fast/reference/v5/configuration/options).
 
 ## Install
 

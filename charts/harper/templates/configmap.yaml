@@ -5,7 +5,7 @@
   formed by the `add_node` operation (see scripts/harper-join-cluster.sh), which
   is Harper's documented join flow and establishes peer trust for self-signed
   certificates (verify_tls:false) — instead of relying on pre-shared certs +
-  static routes. See https://docs.harperdb.io/reference/v5/replication/clustering
+  static routes. See https://docs.harper.fast/reference/v5/replication/clustering
 
   We do NOT pre-write harper-config.yaml (that makes Harper Pro skip install and
   strict-validate a partial file). Base config comes from HARPER_DEFAULT_CONFIG;

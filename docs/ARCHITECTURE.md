@@ -37,7 +37,7 @@ just (a) bring up the pods and (b) hand each one the right peer list.
 ## Declarative config, repeatable deploys
 
 Config from `config:` (verbatim passthrough of every option in the
-[v5 reference](https://docs.harperdb.io/reference/v5/configuration/options)) is
+[v5 reference](https://docs.harper.fast/reference/v5/configuration/options)) is
 serialized to JSON and passed to the container as **`HARPER_DEFAULT_CONFIG`**.
 The image installs itself on first boot (creating a complete valid config, the
 data directories, and the admin user) and layers the chart's settings on top; on restart
@@ -54,7 +54,7 @@ file, demanding fields the installer would normally have written. The supported
 mechanism is instead the config env vars (`HARPER_DEFAULT_CONFIG` /
 `HARPER_SET_CONFIG`), which the installer respects while still doing a full
 install. See the
-[Configuration Overview](https://docs.harperdb.io/reference/v5/configuration/overview).
+[Configuration Overview](https://docs.harper.fast/reference/v5/configuration/overview).
 
 ## Single-node vs. multi-node startup
 
